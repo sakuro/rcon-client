@@ -1,0 +1,6 @@
+[tools]
+ruby = "3.3"
+
+[env]
+_.path = ["bin", "exe"]
+_.file = ".env"
