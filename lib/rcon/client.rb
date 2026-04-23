@@ -26,8 +26,8 @@ module RCon
     # @param password [String]
     # @yieldparam client [RCon::Client]
     # @return [RCon::Client]
-    def self.open(host, port=DEFAULT_PORT, password:)
-      client = new(host, port, password:)
+    def self.open(host, port=DEFAULT_PORT, password:, sentinel_command: "")
+      client = new(host, port, password:, sentinel_command:)
       client.connect
       return client unless block_given?
 
@@ -38,10 +38,11 @@ module RCon
       end
     end
 
-    def initialize(host, port=DEFAULT_PORT, password:)
+    def initialize(host, port=DEFAULT_PORT, password:, sentinel_command: "")
       @host = host
       @port = port
       @password = password
+      @sentinel_command = sentinel_command
       @id_counter = Concurrent::AtomicFixnum.new(0)
       @connection = nil
       @reader_thread = nil
@@ -79,7 +80,7 @@ module RCon
       @pending[sentinel_id] = cmd_id
 
       @connection.send_packet(Packet.new(id: cmd_id, type: PacketType::EXECCOMMAND, body: command))
-      @connection.send_packet(Packet.new(id: sentinel_id, type: PacketType::EXECCOMMAND, body: ""))
+      @connection.send_packet(Packet.new(id: sentinel_id, type: PacketType::EXECCOMMAND, body: @sentinel_command))
 
       future.value!
     end
@@ -101,9 +102,15 @@ module RCon
     private def authenticate
       auth_id = next_id
       @connection.send_packet(Packet.new(id: auth_id, type: PacketType::AUTH, body: @password))
-      @connection.receive_packet # empty RESPONSE_VALUE preceding AUTH_RESPONSE
-      response = @connection.receive_packet # AUTH_RESPONSE
-      raise AuthenticationError, "authentication failed" if response.id == -1
+      # Standard RCON sends an empty RESPONSE_VALUE before AUTH_RESPONSE; some
+      # implementations (e.g. Factorio) omit it and send AUTH_RESPONSE directly.
+      loop do
+        response = @connection.receive_packet
+        next if response.type == PacketType::RESPONSE_VALUE
+        raise AuthenticationError, "authentication failed" if response.id == -1
+
+        break
+      end
     end
 
     private def reader_loop

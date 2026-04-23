@@ -13,9 +13,9 @@ module RCon
 
     DEFAULT_PORT: Integer
 
-    def initialize: (String host, ?Integer port, password: String) -> void
-    def self.open: (String host, ?Integer port, password: String) -> Client
-                 | (String host, ?Integer port, password: String) { (Client) -> void } -> void
+    def initialize: (String host, ?Integer port, password: String, ?sentinel_command: String) -> void
+    def self.open: (String host, ?Integer port, password: String, ?sentinel_command: String) -> Client
+                 | (String host, ?Integer port, password: String, ?sentinel_command: String) { (Client) -> void } -> void
     def connect: () -> self
     def execute: (String command) -> String
     def close: () -> void

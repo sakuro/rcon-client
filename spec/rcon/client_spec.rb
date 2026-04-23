@@ -9,6 +9,9 @@ require "socket"
 # inject_stale:      send a RESPONSE_VALUE with an unrelated id before the real
 #                    response to exercise the `if response.id == cmd_id` branch.
 class FakeRCONServer
+  LINGER_RST = [1, 0].pack("ii").freeze
+  private_constant :LINGER_RST
+
   def initialize(password:, responses: {}, inject_unexpected: false, inject_stale: false, disconnect_on_command: false)
     @server = TCPServer.new("127.0.0.1", 0)
     @password = password
@@ -60,23 +63,22 @@ class FakeRCONServer
       packet = read_packet(socket)
       return unless packet
 
-      if @disconnect_on_command && !packet.body.empty?
+      if @disconnect_on_command
+        # SO_LINGER=0 forces RST (not FIN) so the client reliably gets Errno::ECONNRESET
+        socket.setsockopt(Socket::SOL_SOCKET, Socket::SO_LINGER, LINGER_RST)
         socket.close
         return
       end
 
-      if packet.body.empty?
-        # sentinel: echo back to signal end of response
-        write_packet(socket, RCon::Client::Packet.new(id: packet.id, type: RCon::Client::PacketType::RESPONSE_VALUE, body: ""))
-      else
-        inject_unexpected_packet(socket, packet.id) if @inject_unexpected
-        inject_stale_packet(socket, packet.id) if @inject_stale
+      inject_unexpected_packet(socket, packet.id) if @inject_unexpected
+      inject_stale_packet(socket, packet.id) if @inject_stale
 
-        command = packet.body.force_encoding("UTF-8")
-        Array(@responses[command]).each do |part|
-          write_packet(socket, RCon::Client::Packet.new(id: packet.id, type: RCon::Client::PacketType::RESPONSE_VALUE, body: part))
-        end
+      command = packet.body.force_encoding("UTF-8")
+      Array(@responses[command]).each do |part|
+        write_packet(socket, RCon::Client::Packet.new(id: packet.id, type: RCon::Client::PacketType::RESPONSE_VALUE, body: part))
       end
+      # Always echo back an empty RESPONSE_VALUE so any sentinel command gets a response
+      write_packet(socket, RCon::Client::Packet.new(id: packet.id, type: RCon::Client::PacketType::RESPONSE_VALUE, body: ""))
     end
   end
 
