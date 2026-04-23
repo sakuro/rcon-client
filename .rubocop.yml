@@ -35,7 +35,12 @@ inherit_gem:
 
 inherit_from: .rubocop_todo.yml
 
-# Project-specific settings can be added here
-# Example:
-# Style/Documentation:
-#   Enabled: false
+# RCon maps to rcon/ in file paths (not r_con/ as the default snake_case would produce).
+RSpec/SpecFilePathFormat:
+  CustomTransform:
+    RCon: rcon
+
+# Spec files use loopback addresses for server sockets in tests.
+Style/IpAddresses:
+  Exclude:
+    - spec/**/*

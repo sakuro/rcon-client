@@ -1,0 +1,9 @@
+module RCon
+  class Client
+    module PacketType
+      AUTH: Integer
+      EXECCOMMAND: Integer
+      RESPONSE_VALUE: Integer
+    end
+  end
+end

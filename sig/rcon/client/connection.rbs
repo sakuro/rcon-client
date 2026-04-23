@@ -1,0 +1,11 @@
+module RCon
+  class Client
+    class Connection
+      def initialize: (String host, Integer port) -> void
+      def open: () -> self
+      def close: () -> void
+      def send_packet: (Packet packet) -> void
+      def receive_packet: () -> Packet
+    end
+  end
+end

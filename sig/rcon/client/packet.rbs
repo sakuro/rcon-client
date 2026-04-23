@@ -1,0 +1,13 @@
+module RCon
+  class Client
+    class Packet
+      attr_reader id: Integer
+      attr_reader type: Integer
+      attr_reader body: String
+
+      def initialize: (id: Integer, type: Integer, ?body: String) -> void
+      def encode: () -> String
+      def self.decode: (String data) -> Packet
+    end
+  end
+end

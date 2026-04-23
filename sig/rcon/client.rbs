@@ -1,8 +1,29 @@
 module RCon
-  module Client
+  class Client
     VERSION: String
 
     class Error < StandardError
     end
+
+    class AuthenticationError < Error
+    end
+
+    class ConnectionError < Error
+    end
+
+    DEFAULT_PORT: Integer
+
+    def initialize: (String host, ?Integer port, password: String) -> void
+    def self.open: (String host, ?Integer port, password: String) -> Client
+                 | (String host, ?Integer port, password: String) { (Client) -> void } -> void
+    def connect: () -> self
+    def execute: (String command) -> String
+    def close: () -> void
+    def connected?: () -> bool
+
+    private
+
+    def next_id: () -> Integer
+    def authenticate: () -> void
   end
 end
