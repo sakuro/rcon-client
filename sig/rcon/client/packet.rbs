@@ -1,6 +1,6 @@
 module RCon
   class Client
-    class Packet
+    class Packet < Data
       attr_reader id: Integer
       attr_reader type: Integer
       attr_reader body: String

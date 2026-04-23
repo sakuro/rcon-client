@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "socket"
+
 # Minimal RCON server for testing. Implements auth and EXECCOMMAND handling.
 #
 # inject_unexpected: send a type=2 packet before the real response to exercise
