@@ -1,6 +1,6 @@
 # RCon::Client
 
-TODO: Add a brief description of what this gem does.
+A Ruby client for the [Source RCON Protocol](https://developer.valvesoftware.com/wiki/Source_RCON_Protocol). Supports concurrent command execution from multiple threads.
 
 ## Installation
 
@@ -24,10 +24,46 @@ gem install rcon-client
 
 ## Usage
 
-```ruby
-require 'rcon/client'
+### Basic usage
 
-# TODO: Add usage examples
+```ruby
+require "rcon/client"
+
+# Block form: automatically closes the connection after the block
+RCon::Client.open("127.0.0.1", 27015, password: "secret") do |client|
+  puts client.execute("status")
+end
+
+# Non-block form: caller is responsible for closing
+client = RCon::Client.open("127.0.0.1", 27015, password: "secret")
+puts client.execute("status")
+client.close
+```
+
+### Concurrent execution
+
+`execute` is thread-safe. Multiple threads can issue commands simultaneously and each receives the correct response.
+
+```ruby
+RCon::Client.open("127.0.0.1", 27015, password: "secret") do |client|
+  threads = ["status", "players", "cvarlist"].map do |cmd|
+    Thread.new { [cmd, client.execute(cmd)] }
+  end
+  results = threads.map(&:value).to_h
+end
+```
+
+### Error handling
+
+```ruby
+begin
+  client = RCon::Client.new("127.0.0.1", 27015, password: "secret")
+  client.connect
+rescue RCon::Client::ConnectionError => e
+  # TCP connection failed
+rescue RCon::Client::AuthenticationError
+  # Wrong password
+end
 ```
 
 ## Development
@@ -40,7 +76,4 @@ Bug reports and pull requests are welcome on GitHub at https://github.com/sakuro
 
 ## License
 
-TODO: Specify your license here.
-
-This product is generated from the [gem-scaffold](https://github.com/sakuro/gem-scaffold) template.
-While gem-scaffold itself is MIT licensed, the main code can be redistributed under the license chosen by the author after generation.
+The gem is available as open source under the terms of the [MIT License](LICENSE.txt).
