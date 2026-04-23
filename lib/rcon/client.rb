@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "concurrent"
 require "zeitwerk"
 require_relative "client/version"
 
@@ -41,8 +42,11 @@ module RCon
       @host = host
       @port = port
       @password = password
-      @id_counter = 0
+      @id_counter = Concurrent::AtomicFixnum.new(0)
       @connection = nil
+      @reader_thread = nil
+      @pending = Concurrent::Map.new
+      @closing = false
     end
 
     # Establishes a TCP connection and authenticates.
@@ -51,8 +55,10 @@ module RCon
     # @raise [ConnectionError]
     # @raise [AuthenticationError]
     def connect
+      @closing = false
       @connection = Connection.new(@host, @port).open
       authenticate
+      @reader_thread = Thread.new { reader_loop }
       self
     rescue
       @connection&.close
@@ -67,32 +73,30 @@ module RCon
     # @raise [Error] if body exceeds 511 bytes
     def execute(command)
       cmd_id = next_id
-      @connection.send_packet(Packet.new(id: cmd_id, type: PacketType::EXECCOMMAND, body: command))
-
       sentinel_id = next_id
+      future = Concurrent::Promises.resolvable_future
+      @pending[cmd_id] = [[], future]
+      @pending[sentinel_id] = cmd_id
+
+      @connection.send_packet(Packet.new(id: cmd_id, type: PacketType::EXECCOMMAND, body: command))
       @connection.send_packet(Packet.new(id: sentinel_id, type: PacketType::EXECCOMMAND, body: ""))
 
-      parts = []
-      loop do
-        response = @connection.receive_packet
-        next unless response.type == PacketType::RESPONSE_VALUE
-        break if response.id == sentinel_id
-
-        parts << response.body if response.id == cmd_id
-      end
-      parts.join
+      future.value!
     end
 
     # Closes the connection.
     def close
+      @closing = true
       @connection&.close
       @connection = nil
+      @reader_thread&.join
+      @reader_thread = nil
     end
 
     # @return [Boolean]
     def connected? = !@connection.nil?
 
-    private def next_id = (@id_counter += 1)
+    private def next_id = @id_counter.increment
 
     private def authenticate
       auth_id = next_id
@@ -100,6 +104,37 @@ module RCon
       @connection.receive_packet # empty RESPONSE_VALUE preceding AUTH_RESPONSE
       response = @connection.receive_packet # AUTH_RESPONSE
       raise AuthenticationError, "authentication failed" if response.id == -1
+    end
+
+    private def reader_loop
+      loop { dispatch(@connection.receive_packet) }
+    rescue ConnectionError, IOError => e
+      return if @closing
+
+      error = ConnectionError.new(e.message)
+      @pending.each_pair do |_id, entry|
+        next if entry.is_a?(Integer)
+
+        _, future = entry
+        future.reject(error)
+      end
+      @pending.clear
+    end
+
+    private def dispatch(packet)
+      return unless packet.type == PacketType::RESPONSE_VALUE
+
+      entry = @pending[packet.id]
+      return unless entry
+
+      if entry.is_a?(Integer)
+        cmd_id = entry
+        parts, future = @pending.delete(cmd_id)
+        @pending.delete(packet.id)
+        future.fulfill(parts.join)
+      else
+        entry[0] << packet.body
+      end
     end
   end
 end

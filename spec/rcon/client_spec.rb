@@ -7,12 +7,13 @@
 # inject_stale:      send a RESPONSE_VALUE with an unrelated id before the real
 #                    response to exercise the `if response.id == cmd_id` branch.
 class FakeRCONServer
-  def initialize(password:, responses: {}, inject_unexpected: false, inject_stale: false)
+  def initialize(password:, responses: {}, inject_unexpected: false, inject_stale: false, disconnect_on_command: false)
     @server = TCPServer.new("127.0.0.1", 0)
     @password = password
     @responses = responses
     @inject_unexpected = inject_unexpected
     @inject_stale = inject_stale
+    @disconnect_on_command = disconnect_on_command
     @client_socket = nil
     @thread = nil
   end
@@ -56,6 +57,11 @@ class FakeRCONServer
     loop do
       packet = read_packet(socket)
       return unless packet
+
+      if @disconnect_on_command && !packet.body.empty?
+        socket.close
+        return
+      end
 
       if packet.body.empty?
         # sentinel: echo back to signal end of response
@@ -172,6 +178,27 @@ RSpec.describe RCon::Client do
 
       it "concatenates all parts" do
         expect(client.execute("cvarlist")).to eq("alphabetagamma".b)
+      end
+    end
+
+    context "when the server disconnects unexpectedly" do
+      let(:fake_server) { FakeRCONServer.new(password:, disconnect_on_command: true).start }
+
+      it "raises ConnectionError" do
+        expect { client.execute("anything") }.to raise_error(RCon::Client::ConnectionError)
+      end
+    end
+
+    context "when called concurrently from multiple threads" do
+      let(:responses) { {"cmd1" => "res1", "cmd2" => "res2", "cmd3" => "res3"} }
+
+      it "returns the correct response for each thread" do
+        results = {}
+        threads = %w[cmd1 cmd2 cmd3].map {|cmd| Thread.new { results[cmd] = client.execute(cmd) } }
+        threads.each(&:join)
+        expect(results["cmd1"]).to eq("res1".b)
+        expect(results["cmd2"]).to eq("res2".b)
+        expect(results["cmd3"]).to eq("res3".b)
       end
     end
   end

@@ -25,5 +25,7 @@ module RCon
 
     def next_id: () -> Integer
     def authenticate: () -> void
+    def reader_loop: () -> void
+    def dispatch: (Packet packet) -> void
   end
 end

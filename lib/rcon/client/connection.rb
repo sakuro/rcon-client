@@ -9,6 +9,7 @@ module RCon
       def initialize(host, port)
         @host = host
         @port = port
+        @write_mutex = Mutex.new
       end
 
       # Opens the TCP connection.
@@ -29,7 +30,7 @@ module RCon
 
       # @param packet [Packet]
       def send_packet(packet)
-        @socket.write(packet.encode)
+        @write_mutex.synchronize { @socket.write(packet.encode) }
       end
 
       # @return [Packet]
@@ -43,6 +44,8 @@ module RCon
         raise ConnectionError, "connection closed by server" unless raw_body&.bytesize == size
 
         Packet.decode(raw_size + raw_body)
+      rescue Errno::ECONNRESET => e
+        raise ConnectionError, e.message
       end
     end
   end
